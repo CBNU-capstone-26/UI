@@ -149,6 +149,18 @@ button {
   background-color: #373c42;
 }
 
+.login-submit-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.form-error {
+  margin: -14px 0 18px;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .login-tip {
   margin-top: 40px;
   font-size: 13px;

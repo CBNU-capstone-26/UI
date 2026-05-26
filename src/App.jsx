@@ -1,98 +1,41 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
-// 1. 영상 중심의 Mock 데이터 (영상 1개 안에 여러 이벤트가 포함됨)
-const mockVideos = [
-  {
-    id: "v1",
-    date: "2026-05-24", // 오늘 날짜 기준
-    startTime: "08:00",
-    camera: "지하 1층 CCTV-01",
-    duration: 3600, // 총 영상 길이 (초 단위, 1시간)
-    events: [
-      { id: 101, timestamp: 450, title: "좌측 앞문 스크래치 의심", status: "확인 필요" },
-      { id: 102, timestamp: 1820, title: "문콕 접촉 의심", status: "분석 완료" },
-    ],
-  },
-  {
-    id: "v2",
-    date: "2026-05-22",
-    startTime: "19:30",
-    camera: "정문 옥외 주차장",
-    duration: 7200, // 2시간
-    events: [
-      { id: 201, timestamp: 3400, title: "범퍼 접촉 의심", status: "오탐 가능" },
-    ],
-  },
-  {
-    id: "v3",
-    date: "2026-05-15",
-    startTime: "13:10",
-    camera: "후문 주차장",
-    duration: 1800, // 30분
-    events: [
-      { id: 301, timestamp: 900, title: "우측 뒷문 충돌 의심", status: "확인 필요" },
-      { id: 302, timestamp: 1100, title: "사람 접근 감지", status: "분석 완료" },
-      { id: 303, timestamp: 1550, title: "차량 긁힘 의심", status: "확인 필요" },
-    ],
-  },
-  {
-    id: "v4",
-    date: "2026-04-10",
-    startTime: "21:00",
-    camera: "지하 2층 CCTV-04",
-    duration: 3600,
-    events: [
-      { id: 401, timestamp: 2100, title: "기둥 충돌 의심", status: "분석 완료" },
-    ],
-  },
-  {
-    id: "v5",
-    date: "2026-05-24",
-    startTime: "10:20",
-    camera: "지하 1층 CCTV-02",
-    duration: 2700,
-    events: [
-      { id: 501, timestamp: 620, title: "후진 중 접촉 의심", status: "확인 필요" },
-      { id: 502, timestamp: 1880, title: "차량 측면 접근 감지", status: "분석 완료" },
-    ],
-  },
-  {
-    id: "v6",
-    date: "2026-05-23",
-    startTime: "17:45",
-    camera: "지하 2층 CCTV-03",
-    duration: 5400,
-    events: [
-      { id: 601, timestamp: 2800, title: "주차 라인 이탈 접촉 의심", status: "오탐 가능" },
-    ],
-  },
-  {
-    id: "v7",
-    date: "2026-05-21",
-    startTime: "09:15",
-    camera: "정문 옥외 주차장",
-    duration: 3600,
-    events: [
-      { id: 701, timestamp: 300, title: "앞 범퍼 근접 감지", status: "분석 완료" },
-      { id: 702, timestamp: 2440, title: "문 열림 접촉 의심", status: "확인 필요" },
-    ],
-  },
-  {
-    id: "v8",
-    date: "2026-05-18",
-    startTime: "22:05",
-    camera: "후문 주차장",
-    duration: 4200,
-    events: [
-      { id: 801, timestamp: 1260, title: "야간 차량 긁힘 의심", status: "확인 필요" },
-    ],
-  },
-];
+async function requestJson(path, options) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message ?? "API 요청에 실패했습니다.");
+  }
+  return data;
+}
 
 function LoginPage({ onLogin }) {
-  const [id, setId] = useState("");
-  const [pw, setPw] = useState("");
+  const [id, setId] = useState("admin");
+  const [pw, setPw] = useState("password");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleLogin = async () => {
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    try {
+      await requestJson("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ id, password: pw }),
+      });
+      onLogin();
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="login-layout">
@@ -137,7 +80,15 @@ function LoginPage({ onLogin }) {
             <a href="#none" className="support-link">Support</a>
           </div>
 
-          <button className="login-submit-btn" onClick={onLogin}>로그인</button>
+          {errorMessage && <p className="form-error">{errorMessage}</p>}
+
+          <button
+            className="login-submit-btn"
+            onClick={handleLogin}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "로그인 중..." : "로그인"}
+          </button>
         </div>
       </div>
     </div>
@@ -210,10 +161,11 @@ function getVideosByDateApi(videos) {
 
 // 대시보드 컴포넌트
 function Dashboard({ onLogout }) {
-  const today = new Date();
-  
   // 상태 관리
   const [filterDays, setFilterDays] = useState(7); // 기본 1주일
+  const [videos, setVideos] = useState([]);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
+  const [videoErrorMessage, setVideoErrorMessage] = useState("");
   const [selectedVideo, setSelectedVideo] = useState(null); // null이면 홈(그리드) 화면, 값이 있으면 영상 재생 화면
   const [currentEventId, setCurrentEventId] = useState(null); // 현재 선택된 이벤트 마커
   const [isPlaying, setIsPlaying] = useState(false);
@@ -225,25 +177,56 @@ function Dashboard({ onLogout }) {
   const [calendarMonth, setCalendarMonth] = useState(new Date("2026-05-01T00:00:00"));
   const playerContainerRef = useRef(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadVideos() {
+      setIsLoadingVideos(true);
+      setVideoErrorMessage("");
+
+      try {
+        const data = await requestJson("/api/videos?days=9999");
+        if (isMounted) {
+          setVideos(data.videos ?? []);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setVideoErrorMessage(error.message);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingVideos(false);
+        }
+      }
+    }
+
+    loadVideos();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // 날짜 필터링 계산
   const filteredVideos = useMemo(() => {
+    const today = new Date();
     const startDate = formatDate(addDays(today, -filterDays));
-    return mockVideos.filter((video) => video.date >= startDate);
-  }, [filterDays, today]);
+    return videos.filter((video) => video.date >= startDate);
+  }, [filterDays, videos]);
 
   const videosByDate = useMemo(() => {
-    return getVideosByDateApi(mockVideos);
-  }, []);
+    return getVideosByDateApi(videos);
+  }, [videos]);
 
   const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
   const nextVideos = useMemo(() => {
     if (!selectedVideo) return [];
-    const currentIndex = mockVideos.findIndex((video) => video.id === selectedVideo.id);
+    const currentIndex = videos.findIndex((video) => video.id === selectedVideo.id);
     if (currentIndex === -1) return [];
-    return Array.from({ length: Math.min(4, mockVideos.length - 1) }, (_, index) => {
-      return mockVideos[(currentIndex + index + 1) % mockVideos.length];
+    return Array.from({ length: Math.min(4, videos.length - 1) }, (_, index) => {
+      return videos[(currentIndex + index + 1) % videos.length];
     });
-  }, [selectedVideo]);
+  }, [selectedVideo, videos]);
 
   const moveCalendarMonth = (offset) => {
     setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + offset, 1));
@@ -317,7 +300,11 @@ function Dashboard({ onLogout }) {
 
           {/* 영상 썸네일 그리드 */}
           <div className="video-grid">
-            {filteredVideos.length === 0 ? (
+            {isLoadingVideos ? (
+              <div className="empty-state">영상 목록을 불러오는 중입니다.</div>
+            ) : videoErrorMessage ? (
+              <div className="empty-state">서버 연결 실패: {videoErrorMessage}</div>
+            ) : filteredVideos.length === 0 ? (
               <div className="empty-state">선택한 기간에 해당하는 영상이 없습니다.</div>
             ) : (
               filteredVideos.map((video) => (
